@@ -1,0 +1,2 @@
+# mynet
+my net
