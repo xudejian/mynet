@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"strings"
-	"time"
 )
 
 const (
@@ -121,44 +120,46 @@ func data_passby(dst, src net.Conn, prefix string, eof chan int) {
 	eof <- 1
 }
 
+func (p *Proxy) connectHandler(rw http.ResponseWriter, req *http.Request) {
+	rconn, err := Dial(req.URL.Host)
+	if err != nil {
+		log.Println("dial fail", req.URL.Host, err)
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	defer rconn.Close()
+
+	hj, ok := rw.(http.Hijacker)
+	if !ok {
+		http.Error(rw, "webserver doesn't support hijacking", http.StatusInternalServerError)
+		return
+	}
+	conn, bufrw, err := hj.Hijack()
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Don't forget to close the connection:
+	defer conn.Close()
+	bufrw.WriteString("HTTP/1.1 200 Connection established\r\nConnection: close\r\n\r\n")
+	bufrw.Flush()
+
+	eof := make(chan int, 2)
+
+	go data_passby(rconn, conn, "conn -> rconn", eof)
+	go data_passby(conn, rconn, "rconn -> conn", eof)
+
+	for i := 0; i < 2; i++ {
+		<-eof
+	}
+	log.Println("done")
+}
+
 func (p *Proxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	if req.Method == "CONNECT" {
-		rconn, err := Dial(req.URL.Host)
-		if err != nil {
-			log.Println("dial fail", req.URL.Host, err)
-			http.Error(rw, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		log.Println("dial", req.URL.Host)
-
-		defer rconn.Close()
-		rconn.SetDeadline(time.Now().Add(20 * time.Second))
-
-		hj, ok := rw.(http.Hijacker)
-		if !ok {
-			http.Error(rw, "webserver doesn't support hijacking", http.StatusInternalServerError)
-			return
-		}
-		conn, bufrw, err := hj.Hijack()
-		if err != nil {
-			http.Error(rw, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		// Don't forget to close the connection:
-		defer conn.Close()
-		bufrw.WriteString("HTTP/1.1 200 Connection established\r\nConnection: close\r\n\r\n")
-		bufrw.Flush()
-
-		eof := make(chan int, 2)
-
-		go data_passby(rconn, conn, "conn -> rconn", eof)
-		go data_passby(conn, rconn, "rconn -> conn", eof)
-
-		for i := 0; i < 2; i++ {
-			<-eof
-		}
-		log.Println("done")
+		p.connectHandler(rw, req)
 		return
 	}
 
