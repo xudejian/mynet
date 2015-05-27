@@ -52,6 +52,7 @@ func (p *Proxy) NeedProxy(req *http.Request) bool {
 
 	reqHost := req.URL.Host
 	if "" == reqHost {
+		return false
 		reqHost = req.Host
 	}
 	if "" == reqHost {

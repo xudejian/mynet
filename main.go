@@ -17,6 +17,8 @@ func main() {
 
 	proxy := NewProxy(addr)
 
+	proxy.HandleFunc("/g/connect/helper", burrow)
+
 	log.Println("Start serve in", addr)
 	err := http.ListenAndServe(addr, proxy)
 	if err != nil {
