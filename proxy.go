@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -102,20 +103,25 @@ func (p *Proxy) connectHandler(rw http.ResponseWriter, req *http.Request) {
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	defer conn.Close()
 	bufrw.WriteString("HTTP/1.1 200 Connection established\r\nConnection: close\r\n\r\n")
 	bufrw.Flush()
 
-	go func(req *http.Request, conn net.Conn) {
-		defer conn.Close()
-		err := DefaultTunnelTransport.RoundTrip(req, conn)
-		if err != nil {
-			log.Println("tunnel transport fail", err)
-			return
-		}
-	}(req, conn)
+	err = DefaultTunnelTransport.RoundTrip(req, conn)
+	if err != nil {
+		log.Println("tunnel transport fail", err)
+		return
+	}
 }
 
 func (p *Proxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+
+	fmt.Printf("%s %s\n", req.Method, req.RequestURI)
+
+	if req.Method == "GET" && req.RequestURI == "/proxy.pac" {
+		http.ServeFile(rw, req, "proxy.pac")
+		return
+	}
 
 	if req.Method == "CONNECT" {
 		p.connectHandler(rw, req)
